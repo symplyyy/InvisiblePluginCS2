@@ -27,12 +27,80 @@ public class PluginInvisible : BasePlugin
         return AdminManager.PlayerHasPermissions(player, "@css/invisible") || AdminManager.PlayerHasPermissions(player, "@css/root");
     }
 
-    [ConsoleCommand("css_invisible")]
-    [CommandHelper(minArgs: 1, usage: "!invisible <pseudo>")]
-    [RequiresPermissions("@css/invisible")]
-    public void OnInvisibleCommand(CCSPlayerController? caller, CommandInfo info)
+    [ConsoleCommand("css_invisible", "Rend un joueur invisible")]
+    public void OnInvisibleCommand(CCSPlayerController? caller, CommandInfo command)
     {
-        HandleInvisibleCommand(caller, info.ArgString);
+        if (caller == null) return;
+
+        // Obtenir le nom du joueur cible (prendre tout le reste de la commande comme nom)
+        string targetName = command.ArgString.Trim();
+
+        if (string.IsNullOrEmpty(targetName))
+        {
+            caller.PrintToChat($" {ChatColors.Red}[Invisible]{ChatColors.Default} Usage: !invisible <pseudo>");
+            return;
+        }
+
+        // Chercher le joueur
+        CCSPlayerController? targetPlayer = null;
+        foreach (var player in Utilities.GetPlayers())
+        {
+            if (player != null && player.PlayerName.Contains(targetName, StringComparison.OrdinalIgnoreCase))
+            {
+                targetPlayer = player;
+                break;
+            }
+        }
+
+        if (targetPlayer == null)
+        {
+            caller.PrintToChat($" {ChatColors.Red}[Invisible]{ChatColors.Default} Joueur non trouvé.");
+            return;
+        }
+
+        // Vérifier si le joueur est vivant
+        if (!targetPlayer.PawnIsAlive)
+        {
+            caller.PrintToChat($" {ChatColors.Red}[Invisible]{ChatColors.Default} Le joueur doit être vivant.");
+            return;
+        }
+
+        // Inverser l'état d'invisibilité
+        bool isCurrentlyInvisible = IsPlayerInvisible(targetPlayer);
+        SetPlayerInvisible(targetPlayer, !isCurrentlyInvisible);
+
+        // Notifier les joueurs
+        string status = !isCurrentlyInvisible ? "invisible" : "visible";
+        Server.PrintToChatAll($" {ChatColors.Red}[Invisible]{ChatColors.Default} {targetPlayer.PlayerName} est maintenant {status}.");
+    }
+
+    private void SetPlayerInvisible(CCSPlayerController player, bool invisible)
+    {
+        if (player.PlayerPawn.Value == null) return;
+
+        var pawn = player.PlayerPawn.Value;
+        if (invisible)
+        {
+            // Rendre complètement invisible
+            Server.ExecuteCommand($"ent_fire !self addoutput \"rendermode 1\"");
+            Server.ExecuteCommand($"ent_fire !self addoutput \"renderamt 0\"");
+            Server.ExecuteCommand($"ent_fire !self addoutput \"renderfx 0\"");
+            Server.ExecuteCommand($"ent_fire !self alpha 0");
+        }
+        else
+        {
+            // Rendre visible
+            Server.ExecuteCommand($"ent_fire !self addoutput \"rendermode 0\"");
+            Server.ExecuteCommand($"ent_fire !self addoutput \"renderamt 255\"");
+            Server.ExecuteCommand($"ent_fire !self addoutput \"renderfx 0\"");
+            Server.ExecuteCommand($"ent_fire !self alpha 255");
+        }
+    }
+
+    private bool IsPlayerInvisible(CCSPlayerController player)
+    {
+        if (player.PlayerPawn.Value == null) return false;
+        return player.PlayerPawn.Value.RenderMode != RenderMode_t.kRenderNormal;
     }
 
     [ConsoleCommand("invisible")]
@@ -116,23 +184,6 @@ public class PluginInvisible : BasePlugin
             SetPlayerInvisible(target, true);
             invisiblePlayers[steamId] = true;
             Server.PrintToChatAll($"[PluginInvisible] {target.PlayerName} est maintenant invisible.");
-        }
-    }
-
-    private void SetPlayerInvisible(CCSPlayerController player, bool invisible)
-    {
-        if (player.PlayerPawn.Value == null) return;
-
-        var pawn = player.PlayerPawn.Value;
-        if (invisible)
-        {
-            // Rendre complètement invisible
-            pawn.RenderMode = RenderMode_t.kRenderTransTexture;
-        }
-        else
-        {
-            // Rendre visible
-            pawn.RenderMode = RenderMode_t.kRenderNormal;
         }
     }
 
