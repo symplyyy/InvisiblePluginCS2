@@ -1,11 +1,11 @@
-﻿using CounterStrikeSharp.API;
+using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
-using CounterStrikeSharp.API.Core.Attributes;
 using CounterStrikeSharp.API.Core.Attributes.Registration;
 using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API.Modules.Entities;
 using CounterStrikeSharp.API.Modules.Utils;
 using CounterStrikeSharp.API.Modules.Admin;
+using CounterStrikeSharp.API.Modules.Memory;
 
 namespace PluginInvisible;
 
@@ -35,27 +35,27 @@ public class PluginInvisible : BasePlugin
         HandleInvisibleCommand(caller, info.ArgString);
     }
 
-    [ChatCommand("invisible")]
+    [ConsoleCommand("invisible")]
     public void OnInvisibleChatCommand(CCSPlayerController? caller, CommandInfo info)
     {
         if (caller == null) return;
         
         if (!HasInvisiblePermission(caller))
         {
-            info.ReplyToCommand($" {ChatColors.Red}[PluginInvisible] Vous n'avez pas la permission d'utiliser cette commande.");
+            info.ReplyToCommand("[PluginInvisible] Vous n'avez pas la permission d'utiliser cette commande.");
             return;
         }
 
         if (info.ArgCount < 2)
         {
-            info.ReplyToCommand($" {ChatColors.Red}[PluginInvisible] Usage: !invisible <pseudo>");
+            info.ReplyToCommand("[PluginInvisible] Usage: !invisible <pseudo>");
             return;
         }
 
         HandleInvisibleCommand(caller, info.ArgString);
     }
 
-    [ChatCommand("listinvisible")]
+    [ConsoleCommand("listinvisible")]
     [RequiresPermissions("@css/invisible")]
     public void OnListInvisibleCommand(CCSPlayerController? caller, CommandInfo info)
     {
@@ -63,40 +63,41 @@ public class PluginInvisible : BasePlugin
 
         if (!HasInvisiblePermission(caller))
         {
-            info.ReplyToCommand($" {ChatColors.Red}[PluginInvisible] Vous n'avez pas la permission d'utiliser cette commande.");
+            info.ReplyToCommand("[PluginInvisible] Vous n'avez pas la permission d'utiliser cette commande.");
             return;
         }
 
         var invisibleList = invisiblePlayers.Where(kv => kv.Value)
-            .Select(kv => Utilities.GetPlayerFromSteamId(kv.Key)?.PlayerName ?? "Inconnu")
+            .Select(kv => GetPlayerByUserId(kv.Key)?.PlayerName ?? "Inconnu")
             .ToList();
 
         if (invisibleList.Count == 0)
         {
-            info.ReplyToCommand($" {ChatColors.Blue}[PluginInvisible] Aucun joueur invisible actuellement.");
+            info.ReplyToCommand("[PluginInvisible] Aucun joueur invisible actuellement.");
             return;
         }
 
-        info.ReplyToCommand($" {ChatColors.Blue}[PluginInvisible] Joueurs invisibles :");
+        info.ReplyToCommand("[PluginInvisible] Joueurs invisibles :");
         foreach (var playerName in invisibleList)
         {
-            info.ReplyToCommand($" {ChatColors.Green}- {playerName}");
+            info.ReplyToCommand($"- {playerName}");
         }
     }
 
     private void HandleInvisibleCommand(CCSPlayerController? caller, string targetName)
     {
-        var target = Utilities.FindPlayers(targetName).FirstOrDefault();
+        var players = Utilities.GetPlayers();
+        var target = players.FirstOrDefault(p => p.PlayerName.Contains(targetName, StringComparison.OrdinalIgnoreCase));
 
         if (target == null)
         {
-            ReplyToCommand(caller, $" {ChatColors.Red}[PluginInvisible] Joueur introuvable : {targetName}");
+            ReplyToCommand(caller, $"[PluginInvisible] Joueur introuvable : {targetName}");
             return;
         }
 
         if (!target.PawnIsAlive)
         {
-            ReplyToCommand(caller, $" {ChatColors.Red}[PluginInvisible] Le joueur doit être vivant pour utiliser cette commande.");
+            ReplyToCommand(caller, "[PluginInvisible] Le joueur doit être vivant pour utiliser cette commande.");
             return;
         }
 
@@ -107,14 +108,14 @@ public class PluginInvisible : BasePlugin
             // Désactiver l'invisibilité
             SetPlayerInvisible(target, false);
             invisiblePlayers[steamId] = false;
-            Server.PrintToChatAll($" {ChatColors.Blue}[PluginInvisible] {ChatColors.Green}{target.PlayerName} {ChatColors.Default}est maintenant visible.");
+            Server.PrintToChatAll($"[PluginInvisible] {target.PlayerName} est maintenant visible.");
         }
         else
         {
             // Activer l'invisibilité
             SetPlayerInvisible(target, true);
             invisiblePlayers[steamId] = true;
-            Server.PrintToChatAll($" {ChatColors.Blue}[PluginInvisible] {ChatColors.Green}{target.PlayerName} {ChatColors.Default}est maintenant invisible.");
+            Server.PrintToChatAll($"[PluginInvisible] {target.PlayerName} est maintenant invisible.");
         }
     }
 
@@ -123,18 +124,23 @@ public class PluginInvisible : BasePlugin
         if (player.PlayerPawn.Value == null) return;
 
         // On rend l'entité invisible ou visible
-        player.PlayerPawn.Value.Render = invisible ? 0 : 1;
+        player.PlayerPawn.Value.RenderMode = invisible ? RenderMode_t.kRenderNone : RenderMode_t.kRenderNormal;
     }
 
     private void ReplyToCommand(CCSPlayerController? caller, string message)
     {
         if (caller == null)
         {
-            Console.WriteLine(message.Replace(ChatColors.Red, "").Replace(ChatColors.Blue, "").Replace(ChatColors.Green, "").Replace(ChatColors.Default, ""));
+            Console.WriteLine(message);
         }
         else
         {
             caller.PrintToChat(message);
         }
     }
-}
+
+    private CCSPlayerController? GetPlayerByUserId(ulong steamId)
+    {
+        return Utilities.GetPlayers().FirstOrDefault(p => p.SteamID == steamId);
+    }
+} 

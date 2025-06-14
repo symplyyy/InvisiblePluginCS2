@@ -3,3 +3,11 @@ C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Release\net8.0\Plugin
 C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Release\net8.0\PluginInvisible.AssemblyInfoInputs.cache
 C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Release\net8.0\PluginInvisible.AssemblyInfo.cs
 C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Release\net8.0\PluginInvisible.csproj.CoreCompileInputs.cache
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Release\net8.0\PluginInvisible.sourcelink.json
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\bin\Release\net8.0\PluginInvisible.deps.json
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\bin\Release\net8.0\PluginInvisible.dll
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\bin\Release\net8.0\PluginInvisible.pdb
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Release\net8.0\PluginInvisible.dll
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Release\net8.0\refint\PluginInvisible.dll
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Release\net8.0\PluginInvisible.pdb
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Release\net8.0\ref\PluginInvisible.dll
