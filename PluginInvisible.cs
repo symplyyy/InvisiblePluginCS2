@@ -1,24 +1,98 @@
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
+using CounterStrikeSharp.API.Core.Attributes;
 using CounterStrikeSharp.API.Core.Attributes.Registration;
 using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API.Modules.Entities;
 using CounterStrikeSharp.API.Modules.Utils;
 using CounterStrikeSharp.API.Modules.Admin;
 using CounterStrikeSharp.API.Modules.Memory;
+using CounterStrikeSharp.API.Modules.Entities.Constants;
+using System.Drawing;
+using static CounterStrikeSharp.API.Core.Listeners;
 
 namespace PluginInvisible;
 
 public class PluginInvisible : BasePlugin
 {
     public override string ModuleName => "PluginInvisible";
-    public override string ModuleVersion => "1.0.0";
+    public override string ModuleVersion => "1.2.2";
 
-    private Dictionary<ulong, bool> invisiblePlayers = new();
+    private List<CCSPlayerController> InvisiblePlayers = new List<CCSPlayerController>();
+    private Dictionary<CCSPlayerController, bool> PlayerMakingSound = new Dictionary<CCSPlayerController, bool>();
+    private Dictionary<CCSPlayerController, bool> PlayerThirdPerson = new Dictionary<CCSPlayerController, bool>();
+    private const float RUN_SPEED_THRESHOLD = 200.0f; // Vitesse de course ajustée
 
     public override void Load(bool hotReload)
     {
-        Console.WriteLine("[PluginInvisible] Plugin chargé !");
+        RegisterListener<Listeners.OnTick>(() => OnTick());
+        RegisterEventHandler<EventPlayerFootstep>(OnPlayerFootstep);
+        RegisterEventHandler<EventWeaponFire>(OnWeaponFire);
+        RegisterEventHandler<EventPlayerJump>(OnPlayerJump);
+        RegisterEventHandler<EventWeaponReload>(OnWeaponReload);
+        RegisterEventHandler<EventItemPickup>(OnItemPickup);
+    }
+
+    private void OnTick()
+    {
+        foreach (var player in InvisiblePlayers.ToList())
+        {
+            if (player == null || !player.IsValid || !player.PawnIsAlive) continue;
+
+            var pawn = player.PlayerPawn.Value;
+            if (pawn == null) continue;
+
+            // Vérifier les mouvements rapides (course uniquement)
+            float velocity = (float)Math.Sqrt(
+                pawn.AbsVelocity.X * pawn.AbsVelocity.X +
+                pawn.AbsVelocity.Y * pawn.AbsVelocity.Y
+            ); // On ignore la composante Z pour ne pas compter les sauts
+
+            if (velocity > RUN_SPEED_THRESHOLD)
+            {
+                HandlePlayerSound(player, "course");
+            }
+        }
+    }
+
+    private HookResult OnPlayerFootstep(EventPlayerFootstep @event, GameEventInfo info)
+    {
+        var player = @event.Userid;
+        if (player != null && InvisiblePlayers.Contains(player))
+        {
+            HandlePlayerSound(player, "pas");
+        }
+        return HookResult.Continue;
+    }
+
+    private HookResult OnWeaponFire(EventWeaponFire @event, GameEventInfo info)
+    {
+        var player = @event.Userid;
+        if (player != null && InvisiblePlayers.Contains(player))
+        {
+            HandlePlayerSound(player, "tir");
+        }
+        return HookResult.Continue;
+    }
+
+    private HookResult OnPlayerJump(EventPlayerJump @event, GameEventInfo info)
+    {
+        var player = @event.Userid;
+        if (player != null && InvisiblePlayers.Contains(player))
+        {
+            HandlePlayerSound(player, "saut");
+        }
+        return HookResult.Continue;
+    }
+
+    private HookResult OnWeaponReload(EventWeaponReload @event, GameEventInfo info)
+    {
+        var player = @event.Userid;
+        if (player != null && InvisiblePlayers.Contains(player))
+        {
+            HandlePlayerSound(player, "rechargement");
+        }
+        return HookResult.Continue;
     }
 
     private bool HasInvisiblePermission(CCSPlayerController? player)
@@ -27,46 +101,26 @@ public class PluginInvisible : BasePlugin
         return AdminManager.PlayerHasPermissions(player, "@css/invisible") || AdminManager.PlayerHasPermissions(player, "@css/root");
     }
 
-    [ConsoleCommand("css_invisible", "Rend un joueur invisible")]
+    [ConsoleCommand("css_inv", "Rend un joueur invisible")]
     public void OnInvisibleCommand(CCSPlayerController? caller, CommandInfo command)
     {
-        if (caller == null) return;
-
-        // Obtenir le nom du joueur cible (prendre tout le reste de la commande comme nom)
-        string targetName = command.ArgString.Trim();
-
-        if (string.IsNullOrEmpty(targetName))
+        if (caller == null || !caller.IsValid || !caller.PawnIsAlive)
         {
-            caller.PrintToChat($" {ChatColors.Red}[Invisible]{ChatColors.Default} Usage: !invisible <pseudo>");
             return;
         }
 
-        // Chercher le joueur
-        CCSPlayerController? targetPlayer = null;
-        
-        // Afficher tous les joueurs en debug
-        Server.PrintToConsole("Joueurs connectés :");
-        foreach (var player in Utilities.GetPlayers())
-        {
-            if (player != null)
-            {
-                Server.PrintToConsole($"- {player.PlayerName}");
-            }
-        }
+        string targetName = command.ArgString.Trim();
+        CCSPlayerController targetPlayer;
 
-        // Recherche exacte d'abord
-        foreach (var player in Utilities.GetPlayers())
+        if (string.IsNullOrEmpty(targetName))
         {
-            if (player != null && player.PlayerName.Equals(targetName, StringComparison.OrdinalIgnoreCase))
-            {
-                targetPlayer = player;
-                break;
-            }
+            // Si pas de nom spécifié, on cible le joueur qui a tapé la commande
+            targetPlayer = caller;
         }
-
-        // Si pas trouvé, recherche partielle
-        if (targetPlayer == null)
+        else
         {
+            // Chercher le joueur ciblé
+            targetPlayer = null;
             foreach (var player in Utilities.GetPlayers())
             {
                 if (player != null && player.PlayerName.Contains(targetName, StringComparison.OrdinalIgnoreCase))
@@ -75,68 +129,162 @@ public class PluginInvisible : BasePlugin
                     break;
                 }
             }
+
+            if (targetPlayer == null)
+            {
+                caller.PrintToChat($" {ChatColors.Red}[Invisible]{ChatColors.Default} Joueur non trouvé : {targetName}");
+                return;
+            }
         }
 
-        if (targetPlayer == null)
-        {
-            caller.PrintToChat($" {ChatColors.Red}[Invisible]{ChatColors.Default} Joueur non trouvé. Nom recherché : {targetName}");
-            return;
-        }
-
-        // Vérifier si le joueur est vivant
         if (!targetPlayer.PawnIsAlive)
         {
             caller.PrintToChat($" {ChatColors.Red}[Invisible]{ChatColors.Default} Le joueur doit être vivant.");
             return;
         }
 
-        // Inverser l'état d'invisibilité
-        bool isCurrentlyInvisible = IsPlayerInvisible(targetPlayer);
-        SetPlayerInvisible(targetPlayer, !isCurrentlyInvisible);
-
-        // Notifier les joueurs
-        string status = !isCurrentlyInvisible ? "invisible" : "visible";
-        Server.PrintToChatAll($" {ChatColors.Red}[Invisible]{ChatColors.Default} {targetPlayer.PlayerName} est maintenant {status}.");
-    }
-
-    private void SetPlayerInvisible(CCSPlayerController player, bool invisible)
-    {
-        if (player.PlayerPawn.Value == null) return;
-
-        var pawn = player.PlayerPawn.Value;
-        
-        if (invisible)
+        if (InvisiblePlayers.Contains(targetPlayer))
         {
-            // Rendre complètement invisible
-            Server.ExecuteCommand($"ent_fire {player.PlayerName} addoutput \"rendermode 1\"");
-            Server.ExecuteCommand($"ent_fire {player.PlayerName} addoutput \"renderamt 0\"");
-            Server.ExecuteCommand($"ent_fire {player.PlayerName} addoutput \"renderfx 0\"");
-            Server.ExecuteCommand($"ent_fire {player.PlayerName} alpha 0");
-            
-            // Forcer l'invisibilité avec plusieurs méthodes
-            pawn.RenderMode = RenderMode_t.kRenderTransColor;
-            Server.ExecuteCommand($"sm_drug #{player.UserId}"); // Effet visuel qui aide à l'invisibilité
-            Server.ExecuteCommand($"ent_fire {player.PlayerName} color \"0 0 0 0\"");
+            SetPlayerVisible(targetPlayer);
+            InvisiblePlayers.Remove(targetPlayer);
+            Server.PrintToChatAll($" {ChatColors.Red}[Invisible]{ChatColors.Default} {targetPlayer.PlayerName} est maintenant visible.");
         }
         else
         {
-            // Rendre visible
-            Server.ExecuteCommand($"ent_fire {player.PlayerName} addoutput \"rendermode 0\"");
-            Server.ExecuteCommand($"ent_fire {player.PlayerName} addoutput \"renderamt 255\"");
-            Server.ExecuteCommand($"ent_fire {player.PlayerName} addoutput \"renderfx 0\"");
-            Server.ExecuteCommand($"ent_fire {player.PlayerName} alpha 255");
-            
-            // Restaurer la visibilité
-            pawn.RenderMode = RenderMode_t.kRenderNormal;
-            Server.ExecuteCommand($"sm_drug #{player.UserId} 0"); // Arrêter l'effet
-            Server.ExecuteCommand($"ent_fire {player.PlayerName} color \"255 255 255 255\"");
+            SetPlayerInvisible(targetPlayer);
+            InvisiblePlayers.Add(targetPlayer);
+            Server.PrintToChatAll($" {ChatColors.Red}[Invisible]{ChatColors.Default} {targetPlayer.PlayerName} est maintenant invisible.");
         }
     }
 
-    private bool IsPlayerInvisible(CCSPlayerController player)
+    private void HandlePlayerSound(CCSPlayerController player, string soundType)
     {
-        if (player.PlayerPawn.Value == null) return false;
-        return player.PlayerPawn.Value.RenderMode != RenderMode_t.kRenderNormal;
+        if (!PlayerMakingSound.ContainsKey(player) || !PlayerMakingSound[player])
+        {
+            PlayerMakingSound[player] = true;
+
+            // Debug: Afficher le type de son (uniquement visible dans la console serveur)
+            Server.PrintToConsole($"Son détecté pour {player.PlayerName}: {soundType}");
+
+            // Rendre le joueur visible temporairement
+            SetPlayerVisible(player);
+
+            // Afficher le timer initial
+            player.PrintToCenter("0.50s");
+
+            // Mettre à jour à 0.33s
+            AddTimer(0.17f, () => 
+            {
+                if (player != null && player.IsValid && player.PawnIsAlive)
+                {
+                    player.PrintToCenter("0.33s");
+                }
+            });
+
+            // Mettre à jour à 0.17s
+            AddTimer(0.33f, () => 
+            {
+                if (player != null && player.IsValid && player.PawnIsAlive)
+                {
+                    player.PrintToCenter("0.17s");
+                }
+            });
+
+            // Programmer le retour à l'invisibilité
+            AddTimer(0.5f, () =>
+            {
+                if (InvisiblePlayers.Contains(player))
+                {
+                    SetPlayerInvisible(player);
+                    PlayerMakingSound[player] = false;
+                    player.PrintToCenter("");
+                }
+            });
+        }
+    }
+
+    private void SetPlayerVisible(CCSPlayerController player)
+    {
+        if (player == null || !player.IsValid || !player.PlayerPawn.IsValid) return;
+
+        var pawn = player.PlayerPawn.Value;
+        if (pawn == null) return;
+
+        // Rendre le joueur visible
+        pawn.Render = Color.FromArgb(255, 255, 255, 255);
+        Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_clrRender");
+
+        // Rendre les armes visibles
+        var activeWeapon = pawn.WeaponServices?.ActiveWeapon.Value;
+        if (activeWeapon != null && activeWeapon.IsValid)
+        {
+            activeWeapon.Render = Color.FromArgb(255, 255, 255, 255);
+            activeWeapon.ShadowStrength = 1.0f;
+            Utilities.SetStateChanged(activeWeapon, "CBaseModelEntity", "m_clrRender");
+        }
+
+        // Rendre toutes les armes visibles
+        var myWeapons = pawn.WeaponServices?.MyWeapons;
+        if (myWeapons != null)
+        {
+            foreach (var gun in myWeapons)
+            {
+                var weapon = gun.Value;
+                if (weapon != null)
+                {
+                    weapon.Render = Color.FromArgb(255, 255, 255, 255);
+                    weapon.ShadowStrength = 1.0f;
+                    Utilities.SetStateChanged(weapon, "CBaseModelEntity", "m_clrRender");
+                }
+            }
+        }
+    }
+
+    private void SetPlayerInvisible(CCSPlayerController player)
+    {
+        if (player == null || !player.IsValid || !player.PlayerPawn.IsValid) return;
+
+        var pawn = player.PlayerPawn.Value;
+        if (pawn == null) return;
+
+        // Rendre le joueur invisible
+        pawn.Render = Color.FromArgb(0, 255, 255, 255);
+        Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_clrRender");
+
+        // Rendre l'arme active invisible
+        var activeWeapon = pawn.WeaponServices?.ActiveWeapon.Value;
+        if (activeWeapon != null && activeWeapon.IsValid)
+        {
+            activeWeapon.Render = Color.FromArgb(0, 255, 255, 255);
+            activeWeapon.ShadowStrength = 0.0f;
+            Utilities.SetStateChanged(activeWeapon, "CBaseModelEntity", "m_clrRender");
+        }
+
+        // Rendre toutes les armes invisibles
+        var myWeapons = pawn.WeaponServices?.MyWeapons;
+        if (myWeapons != null)
+        {
+            foreach (var gun in myWeapons)
+            {
+                var weapon = gun.Value;
+                if (weapon != null)
+                {
+                    weapon.Render = Color.FromArgb(0, 255, 255, 255);
+                    weapon.ShadowStrength = 0.0f;
+                    Utilities.SetStateChanged(weapon, "CBaseModelEntity", "m_clrRender");
+                }
+            }
+        }
+    }
+
+    private HookResult OnItemPickup(EventItemPickup @event, GameEventInfo info)
+    {
+        var player = @event.Userid;
+        if (player != null && InvisiblePlayers.Contains(player))
+        {
+            SetPlayerInvisible(player);
+        }
+        return HookResult.Continue;
     }
 
     [ConsoleCommand("invisible")]
@@ -171,9 +319,7 @@ public class PluginInvisible : BasePlugin
             return;
         }
 
-        var invisibleList = invisiblePlayers.Where(kv => kv.Value)
-            .Select(kv => GetPlayerByUserId(kv.Key)?.PlayerName ?? "Inconnu")
-            .ToList();
+        var invisibleList = InvisiblePlayers.Select(p => p.PlayerName).ToList();
 
         if (invisibleList.Count == 0)
         {
@@ -205,20 +351,16 @@ public class PluginInvisible : BasePlugin
             return;
         }
 
-        ulong steamId = target.SteamID;
-
-        if (invisiblePlayers.ContainsKey(steamId) && invisiblePlayers[steamId])
+        if (InvisiblePlayers.Contains(target))
         {
-            // Désactiver l'invisibilité
-            SetPlayerInvisible(target, false);
-            invisiblePlayers[steamId] = false;
+            SetPlayerVisible(target);
+            InvisiblePlayers.Remove(target);
             Server.PrintToChatAll($"[PluginInvisible] {target.PlayerName} est maintenant visible.");
         }
         else
         {
-            // Activer l'invisibilité
-            SetPlayerInvisible(target, true);
-            invisiblePlayers[steamId] = true;
+            SetPlayerInvisible(target);
+            InvisiblePlayers.Add(target);
             Server.PrintToChatAll($"[PluginInvisible] {target.PlayerName} est maintenant invisible.");
         }
     }
@@ -233,10 +375,5 @@ public class PluginInvisible : BasePlugin
         {
             caller.PrintToChat(message);
         }
-    }
-
-    private CCSPlayerController? GetPlayerByUserId(ulong steamId)
-    {
-        return Utilities.GetPlayers().FirstOrDefault(p => p.SteamID == steamId);
     }
 } 
