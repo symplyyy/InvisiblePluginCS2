@@ -123,8 +123,17 @@ public class PluginInvisible : BasePlugin
     {
         if (player.PlayerPawn.Value == null) return;
 
-        // On rend l'entité invisible ou visible
-        player.PlayerPawn.Value.RenderMode = invisible ? RenderMode_t.kRenderNone : RenderMode_t.kRenderNormal;
+        var pawn = player.PlayerPawn.Value;
+        if (invisible)
+        {
+            // Rendre complètement invisible
+            pawn.RenderMode = RenderMode_t.kRenderTransTexture;
+        }
+        else
+        {
+            // Rendre visible
+            pawn.RenderMode = RenderMode_t.kRenderNormal;
+        }
     }
 
     private void ReplyToCommand(CCSPlayerController? caller, string message)
