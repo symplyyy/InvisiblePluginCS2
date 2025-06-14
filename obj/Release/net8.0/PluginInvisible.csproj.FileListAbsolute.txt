@@ -1,0 +1,5 @@
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Release\net8.0\PluginInvisible.csproj.AssemblyReference.cache
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Release\net8.0\PluginInvisible.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Release\net8.0\PluginInvisible.AssemblyInfoInputs.cache
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Release\net8.0\PluginInvisible.AssemblyInfo.cs
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Release\net8.0\PluginInvisible.csproj.CoreCompileInputs.cache
