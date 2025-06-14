@@ -43,18 +43,43 @@ public class PluginInvisible : BasePlugin
 
         // Chercher le joueur
         CCSPlayerController? targetPlayer = null;
+        
+        // Afficher tous les joueurs en debug
+        Server.PrintToConsole("Joueurs connectés :");
         foreach (var player in Utilities.GetPlayers())
         {
-            if (player != null && player.PlayerName.Contains(targetName, StringComparison.OrdinalIgnoreCase))
+            if (player != null)
+            {
+                Server.PrintToConsole($"- {player.PlayerName}");
+            }
+        }
+
+        // Recherche exacte d'abord
+        foreach (var player in Utilities.GetPlayers())
+        {
+            if (player != null && player.PlayerName.Equals(targetName, StringComparison.OrdinalIgnoreCase))
             {
                 targetPlayer = player;
                 break;
             }
         }
 
+        // Si pas trouvé, recherche partielle
         if (targetPlayer == null)
         {
-            caller.PrintToChat($" {ChatColors.Red}[Invisible]{ChatColors.Default} Joueur non trouvé.");
+            foreach (var player in Utilities.GetPlayers())
+            {
+                if (player != null && player.PlayerName.Contains(targetName, StringComparison.OrdinalIgnoreCase))
+                {
+                    targetPlayer = player;
+                    break;
+                }
+            }
+        }
+
+        if (targetPlayer == null)
+        {
+            caller.PrintToChat($" {ChatColors.Red}[Invisible]{ChatColors.Default} Joueur non trouvé. Nom recherché : {targetName}");
             return;
         }
 
@@ -79,21 +104,32 @@ public class PluginInvisible : BasePlugin
         if (player.PlayerPawn.Value == null) return;
 
         var pawn = player.PlayerPawn.Value;
+        
         if (invisible)
         {
             // Rendre complètement invisible
-            Server.ExecuteCommand($"ent_fire !self addoutput \"rendermode 1\"");
-            Server.ExecuteCommand($"ent_fire !self addoutput \"renderamt 0\"");
-            Server.ExecuteCommand($"ent_fire !self addoutput \"renderfx 0\"");
-            Server.ExecuteCommand($"ent_fire !self alpha 0");
+            Server.ExecuteCommand($"ent_fire {player.PlayerName} addoutput \"rendermode 1\"");
+            Server.ExecuteCommand($"ent_fire {player.PlayerName} addoutput \"renderamt 0\"");
+            Server.ExecuteCommand($"ent_fire {player.PlayerName} addoutput \"renderfx 0\"");
+            Server.ExecuteCommand($"ent_fire {player.PlayerName} alpha 0");
+            
+            // Forcer l'invisibilité avec plusieurs méthodes
+            pawn.RenderMode = RenderMode_t.kRenderTransColor;
+            Server.ExecuteCommand($"sm_drug #{player.UserId}"); // Effet visuel qui aide à l'invisibilité
+            Server.ExecuteCommand($"ent_fire {player.PlayerName} color \"0 0 0 0\"");
         }
         else
         {
             // Rendre visible
-            Server.ExecuteCommand($"ent_fire !self addoutput \"rendermode 0\"");
-            Server.ExecuteCommand($"ent_fire !self addoutput \"renderamt 255\"");
-            Server.ExecuteCommand($"ent_fire !self addoutput \"renderfx 0\"");
-            Server.ExecuteCommand($"ent_fire !self alpha 255");
+            Server.ExecuteCommand($"ent_fire {player.PlayerName} addoutput \"rendermode 0\"");
+            Server.ExecuteCommand($"ent_fire {player.PlayerName} addoutput \"renderamt 255\"");
+            Server.ExecuteCommand($"ent_fire {player.PlayerName} addoutput \"renderfx 0\"");
+            Server.ExecuteCommand($"ent_fire {player.PlayerName} alpha 255");
+            
+            // Restaurer la visibilité
+            pawn.RenderMode = RenderMode_t.kRenderNormal;
+            Server.ExecuteCommand($"sm_drug #{player.UserId} 0"); // Arrêter l'effet
+            Server.ExecuteCommand($"ent_fire {player.PlayerName} color \"255 255 255 255\"");
         }
     }
 
