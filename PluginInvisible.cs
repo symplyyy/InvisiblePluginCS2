@@ -32,6 +32,7 @@ public class PluginInvisible : BasePlugin
         RegisterEventHandler<EventWeaponReload>(OnWeaponReload);
         RegisterEventHandler<EventItemPickup>(OnItemPickup);
         RegisterEventHandler<EventRoundStart>(OnRoundStart);
+        RegisterEventHandler<EventWeaponZoom>(OnWeaponZoom);
 
         // Désactiver le radar au chargement du plugin
         Server.ExecuteCommand("mp_radar_showall 0");
@@ -95,7 +96,8 @@ public class PluginInvisible : BasePlugin
         var player = @event.Userid;
         if (player != null && InvisiblePlayers.Contains(player))
         {
-            HandlePlayerSound(player, "rechargement");
+            // Durée réduite à 0.2 secondes pour le rechargement
+            HandlePlayerSoundWithDuration(player, "rechargement", 0.2f);
         }
         return HookResult.Continue;
     }
@@ -105,6 +107,17 @@ public class PluginInvisible : BasePlugin
         // S'assurer que le radar reste désactivé au début de chaque round
         Server.ExecuteCommand("mp_radar_showall 0");
         Server.ExecuteCommand("sv_disable_radar 1");
+        return HookResult.Continue;
+    }
+
+    private HookResult OnWeaponZoom(EventWeaponZoom @event, GameEventInfo info)
+    {
+        var player = @event.Userid;
+        if (player != null && InvisiblePlayers.Contains(player))
+        {
+            // Durée réduite à 0.2 secondes pour le zoom
+            HandlePlayerSoundWithDuration(player, "zoom", 0.2f);
+        }
         return HookResult.Continue;
     }
 
@@ -170,7 +183,7 @@ public class PluginInvisible : BasePlugin
         }
     }
 
-    private void HandlePlayerSound(CCSPlayerController player, string soundType)
+    private void HandlePlayerSoundWithDuration(CCSPlayerController player, string soundType, float duration)
     {
         if (!PlayerMakingSound.ContainsKey(player) || !PlayerMakingSound[player])
         {
@@ -183,28 +196,25 @@ public class PluginInvisible : BasePlugin
             SetPlayerVisible(player);
 
             // Afficher le timer initial
-            player.PrintToCenter("0.50");
+            player.PrintToCenter($"{duration:0.00}");
 
-            // Mettre à jour à 0.33s
-            AddTimer(0.17f, () => 
+            // Mettre à jour le timer toutes les 0.25 secondes
+            float remainingTime = duration;
+            while (remainingTime > 0)
             {
-                if (player != null && player.IsValid && player.PawnIsAlive)
+                float currentTime = remainingTime;
+                AddTimer(duration - remainingTime, () =>
                 {
-                    player.PrintToCenter("0.33");
-                }
-            });
-
-            // Mettre à jour à 0.17s
-            AddTimer(0.33f, () => 
-            {
-                if (player != null && player.IsValid && player.PawnIsAlive)
-                {
-                    player.PrintToCenter("0.17");
-                }
-            });
+                    if (player != null && player.IsValid && player.PawnIsAlive)
+                    {
+                        player.PrintToCenter($"{currentTime:0.00}");
+                    }
+                });
+                remainingTime -= 0.25f;
+            }
 
             // Programmer le retour à l'invisibilité
-            AddTimer(0.5f, () =>
+            AddTimer(duration, () =>
             {
                 if (InvisiblePlayers.Contains(player))
                 {
@@ -214,6 +224,12 @@ public class PluginInvisible : BasePlugin
                 }
             });
         }
+    }
+
+    private void HandlePlayerSound(CCSPlayerController player, string soundType)
+    {
+        // Utiliser la durée par défaut de 0.5 secondes pour les autres sons
+        HandlePlayerSoundWithDuration(player, soundType, 0.5f);
     }
 
     private void SetPlayerVisible(CCSPlayerController player)
