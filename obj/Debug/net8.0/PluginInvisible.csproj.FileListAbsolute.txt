@@ -1,0 +1,13 @@
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Debug\net8.0\PluginInvisible.csproj.AssemblyReference.cache
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Debug\net8.0\PluginInvisible.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Debug\net8.0\PluginInvisible.AssemblyInfoInputs.cache
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Debug\net8.0\PluginInvisible.AssemblyInfo.cs
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Debug\net8.0\PluginInvisible.csproj.CoreCompileInputs.cache
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Debug\net8.0\PluginInvisible.sourcelink.json
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\bin\Debug\net8.0\PluginInvisible.deps.json
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\bin\Debug\net8.0\PluginInvisible.dll
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\bin\Debug\net8.0\PluginInvisible.pdb
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Debug\net8.0\PluginInvisible.dll
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Debug\net8.0\refint\PluginInvisible.dll
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Debug\net8.0\PluginInvisible.pdb
+C:\Users\symplyy\Desktop\TestDevPlugin\PluginInvisible\obj\Debug\net8.0\ref\PluginInvisible.dll

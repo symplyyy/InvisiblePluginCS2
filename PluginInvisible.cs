@@ -31,6 +31,11 @@ public class PluginInvisible : BasePlugin
         RegisterEventHandler<EventPlayerJump>(OnPlayerJump);
         RegisterEventHandler<EventWeaponReload>(OnWeaponReload);
         RegisterEventHandler<EventItemPickup>(OnItemPickup);
+        RegisterEventHandler<EventRoundStart>(OnRoundStart);
+
+        // Désactiver le radar au chargement du plugin
+        Server.ExecuteCommand("mp_radar_showall 0");
+        Server.ExecuteCommand("sv_disable_radar 1");
     }
 
     private void OnTick()
@@ -92,6 +97,14 @@ public class PluginInvisible : BasePlugin
         {
             HandlePlayerSound(player, "rechargement");
         }
+        return HookResult.Continue;
+    }
+
+    private HookResult OnRoundStart(EventRoundStart @event, GameEventInfo info)
+    {
+        // S'assurer que le radar reste désactivé au début de chaque round
+        Server.ExecuteCommand("mp_radar_showall 0");
+        Server.ExecuteCommand("sv_disable_radar 1");
         return HookResult.Continue;
     }
 
@@ -170,14 +183,14 @@ public class PluginInvisible : BasePlugin
             SetPlayerVisible(player);
 
             // Afficher le timer initial
-            player.PrintToCenter("0.50s");
+            player.PrintToCenter("0.50");
 
             // Mettre à jour à 0.33s
             AddTimer(0.17f, () => 
             {
                 if (player != null && player.IsValid && player.PawnIsAlive)
                 {
-                    player.PrintToCenter("0.33s");
+                    player.PrintToCenter("0.33");
                 }
             });
 
@@ -186,7 +199,7 @@ public class PluginInvisible : BasePlugin
             {
                 if (player != null && player.IsValid && player.PawnIsAlive)
                 {
-                    player.PrintToCenter("0.17s");
+                    player.PrintToCenter("0.17");
                 }
             });
 
@@ -213,6 +226,10 @@ public class PluginInvisible : BasePlugin
         // Rendre le joueur visible
         pawn.Render = Color.FromArgb(255, 255, 255, 255);
         Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_clrRender");
+
+        // Réactiver la visibilité du modèle
+        pawn.RenderMode = RenderMode_t.kRenderNormal;
+        Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_nRenderMode");
 
         // Rendre les armes visibles
         var activeWeapon = pawn.WeaponServices?.ActiveWeapon.Value;
@@ -250,6 +267,10 @@ public class PluginInvisible : BasePlugin
         // Rendre le joueur invisible
         pawn.Render = Color.FromArgb(0, 255, 255, 255);
         Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_clrRender");
+
+        // Désactiver la visibilité du modèle
+        pawn.RenderMode = RenderMode_t.kRenderTransColor;
+        Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_nRenderMode");
 
         // Rendre l'arme active invisible
         var activeWeapon = pawn.WeaponServices?.ActiveWeapon.Value;
