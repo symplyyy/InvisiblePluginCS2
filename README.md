@@ -192,47 +192,6 @@ Son détecté pour PlayerName: atterrissage
 Atterrissage avec impact détecté pour PlayerName (vélocité: 250.3)
 ```
 
-## 🤝 Contribution
-
-### Comment Contribuer
-1. **Fork** le projet
-2. **Créer** une branche pour votre fonctionnalité
-3. **Commiter** vos changements
-4. **Pusher** vers la branche
-5. **Ouvrir** une Pull Request
-
-### Standards de Code
-- Utilisez les conventions C# standard
-- Commentez les fonctions complexes
-- Testez sur un serveur local avant de soumettre
-
-## 📄 Licence
-
-Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.
-
-## 📞 Support
-
-- **Issues** : [GitHub Issues](https://github.com/votrecompte/InvisiblePluginCS2/issues)
-- **Discord** : Rejoignez notre serveur Discord
-- **Documentation** : Wiki du projet
-
-## 🎯 Roadmap
-
-### Prochaines Fonctionnalités
-- [ ] Interface web d'administration
-- [ ] Zones d'invisibilité automatiques
-- [ ] Effets visuels personnalisés
-- [ ] Intégration avec d'autres plugins
-- [ ] Mode invisible par équipe
-
-### Améliorations Prévues
-- [ ] Optimisation des performances
-- [ ] Support multi-langues
-- [ ] Configuration via fichiers JSON
-- [ ] Statistiques d'utilisation
-
----
-
 **Développé avec ❤️ pour la communauté Counter-Strike 2**
 
-*Version 1.2.2 - Dernière mise à jour : Décembre 2024* 
+*Version 1.2.2 - Dernière mise à jour : Juin 2025* 
