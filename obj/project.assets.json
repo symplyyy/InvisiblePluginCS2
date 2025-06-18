@@ -2555,19 +2555,19 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\symplyy\\.nuget\\packages\\": {}
+    "C:\\Users\\timeo\\.nuget\\packages\\": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\symplyy\\Desktop\\TestDevPlugin\\PluginInvisible\\PluginInvisible.csproj",
+      "projectUniqueName": "C:\\Users\\timeo\\OneDrive\\Bureau\\PluginsCS\\InvisiblePluginCS2\\PluginInvisible.csproj",
       "projectName": "PluginInvisible",
-      "projectPath": "C:\\Users\\symplyy\\Desktop\\TestDevPlugin\\PluginInvisible\\PluginInvisible.csproj",
-      "packagesPath": "C:\\Users\\symplyy\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\symplyy\\Desktop\\TestDevPlugin\\PluginInvisible\\obj\\",
+      "projectPath": "C:\\Users\\timeo\\OneDrive\\Bureau\\PluginsCS\\InvisiblePluginCS2\\PluginInvisible.csproj",
+      "packagesPath": "C:\\Users\\timeo\\.nuget\\packages\\",
+      "outputPath": "C:\\Users\\timeo\\OneDrive\\Bureau\\PluginsCS\\InvisiblePluginCS2\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
-        "C:\\Users\\symplyy\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        "C:\\Users\\timeo\\AppData\\Roaming\\NuGet\\NuGet.Config"
       ],
       "originalTargetFrameworks": [
         "net8.0"

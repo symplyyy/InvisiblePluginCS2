@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("PluginInvisible")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+289725e5f06e8fd6a6b267b4c989060cee5930ca")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2abc16e4a3f75809e1b841ccfb0d97767aa750ff")]
 [assembly: System.Reflection.AssemblyProductAttribute("PluginInvisible")]
 [assembly: System.Reflection.AssemblyTitleAttribute("PluginInvisible")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

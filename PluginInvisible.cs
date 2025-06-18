@@ -18,32 +18,227 @@ public class PluginInvisible : BasePlugin
     public override string ModuleName => "PluginInvisible";
     public override string ModuleVersion => "1.2.2";
 
-    private List<CCSPlayerController> InvisiblePlayers = new List<CCSPlayerController>();
-    private Dictionary<CCSPlayerController, bool> PlayerMakingSound = new Dictionary<CCSPlayerController, bool>();
-    private Dictionary<CCSPlayerController, bool> PlayerThirdPerson = new Dictionary<CCSPlayerController, bool>();
+    private readonly List<int> InvisiblePlayerSlots = new List<int>();
+    private readonly Dictionary<int, bool> PlayerMakingSound = new Dictionary<int, bool>();
+    private readonly Dictionary<int, bool> PlayerThirdPerson = new Dictionary<int, bool>();
+    private readonly List<int> InvisiblePlayerSlotsPersistent = new List<int>(); // Garde le statut même après la mort
+    private readonly Dictionary<int, CBaseEntity> DefuseKitsInUse = new Dictionary<int, CBaseEntity>(); // Tracking des kits de désamorçage
+    private readonly Dictionary<int, bool> PlayerWasInAir = new Dictionary<int, bool>(); // Tracking des joueurs en l'air
+    private readonly Dictionary<int, float> PlayerFallStartHeight = new Dictionary<int, float>(); // Hauteur de début de chute
+    private readonly Dictionary<int, bool> PlayerCenterTextLocked = new Dictionary<int, bool>(); // Verrouillage de la zone de texte centrale
     private const float RUN_SPEED_THRESHOLD = 200.0f; // Vitesse de course ajustée
+    private const float FALL_DAMAGE_THRESHOLD = 44f; // Hauteur de chute pour faire du bruit (en unités) - très sensible pour capturer les sauts sur place
 
     public override void Load(bool hotReload)
     {
         RegisterListener<Listeners.OnTick>(() => OnTick());
         RegisterEventHandler<EventPlayerFootstep>(OnPlayerFootstep);
         RegisterEventHandler<EventWeaponFire>(OnWeaponFire);
-        RegisterEventHandler<EventPlayerJump>(OnPlayerJump);
         RegisterEventHandler<EventWeaponReload>(OnWeaponReload);
         RegisterEventHandler<EventItemPickup>(OnItemPickup);
         RegisterEventHandler<EventRoundStart>(OnRoundStart);
         RegisterEventHandler<EventWeaponZoom>(OnWeaponZoom);
+
+        // CheckTransmit pour masquer complètement les joueurs invisibles et leurs objets
+        RegisterListener<Listeners.CheckTransmit>(OnCheckTransmit);
+        RegisterEventHandler<EventPlayerDeath>(OnPlayerDeath, HookMode.Pre);
+        RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn);
+        RegisterEventHandler<EventBombBegindefuse>(OnBombBeginDefuse);
+        RegisterEventHandler<EventBombAbortdefuse>(OnBombAbortDefuse);
+        RegisterListener<Listeners.OnClientDisconnect>(OnClientDisconnect);
 
         // Désactiver le radar au chargement du plugin
         Server.ExecuteCommand("mp_radar_showall 0");
         Server.ExecuteCommand("sv_disable_radar 1");
     }
 
+    private void OnCheckTransmit(CCheckTransmitInfoList infoList)
+    {
+        var players = Utilities.GetPlayers();
+        if (!players.Any()) return;
+
+        foreach ((CCheckTransmitInfo info, CCSPlayerController? player) in infoList)
+        {
+            if (player == null || !player.IsValid) continue;
+
+            // Masquer les joueurs invisibles qui ne font pas de bruit
+            var hiddenPlayers = players.Where(p => 
+                p.IsValid && 
+                p.PawnIsAlive && 
+                p.Slot != player.Slot && 
+                InvisiblePlayerSlots.Contains(p.Slot) && 
+                (!PlayerMakingSound.ContainsKey(p.Slot) || !PlayerMakingSound[p.Slot])
+            );
+
+            foreach (var hiddenPlayer in hiddenPlayers)
+            {
+                // Masquer le joueur
+                info.TransmitEntities.Remove((int)hiddenPlayer.Pawn.Index);
+
+                // Masquer toutes ses armes (y compris la bombe)
+                var pawn = hiddenPlayer.PlayerPawn.Value;
+                if (pawn?.WeaponServices?.MyWeapons != null)
+                {
+                    foreach (var weaponHandle in pawn.WeaponServices.MyWeapons)
+                    {
+                        var weapon = weaponHandle.Value;
+                        if (weapon != null && weapon.IsValid)
+                        {
+                            info.TransmitEntities.Remove((int)weapon.Index);
+                        }
+                    }
+                }
+
+                // Masquer le kit de désamorçage si le joueur en utilise un
+                if (DefuseKitsInUse.ContainsKey(hiddenPlayer.Slot))
+                {
+                    var defuseKit = DefuseKitsInUse[hiddenPlayer.Slot];
+                    if (defuseKit != null && defuseKit.IsValid)
+                    {
+                        info.TransmitEntities.Remove((int)defuseKit.Index);
+                    }
+                }
+            }
+        }
+    }
+
+    private HookResult OnPlayerDeath(EventPlayerDeath @event, GameEventInfo info)
+    {
+        var player = @event.Userid;
+        if (player == null || !player.IsValid) return HookResult.Continue;
+
+        // Ne plus supprimer le joueur de la liste des invisibles à la mort
+        // Seulement nettoyer le son
+        if (PlayerMakingSound.ContainsKey(player.Slot))
+        {
+            PlayerMakingSound[player.Slot] = false;
+        }
+        
+        return HookResult.Continue;
+    }
+
+    private HookResult OnPlayerSpawn(EventPlayerSpawn @event, GameEventInfo info)
+    {
+        var player = @event.Userid;
+        if (player == null || !player.IsValid) return HookResult.Continue;
+
+        // Restaurer l'invisibilité si le joueur était invisible avant de mourir
+        if (InvisiblePlayerSlotsPersistent.Contains(player.Slot) && 
+            !InvisiblePlayerSlots.Contains(player.Slot))
+        {
+            InvisiblePlayerSlots.Add(player.Slot);
+        }
+
+        return HookResult.Continue;
+    }
+
+    private HookResult OnBombBeginDefuse(EventBombBegindefuse @event, GameEventInfo info)
+    {
+        var player = @event.Userid;
+        if (player == null || !player.IsValid) return HookResult.Continue;
+
+        // Approche alternative : chercher toutes les entités avec le modèle defuse_multimeter
+        AddTimer(0.1f, () =>
+        {
+            var entities = Utilities.FindAllEntitiesByDesignerName<CBaseEntity>("prop_dynamic");
+            foreach (var entity in entities)
+            {
+                if (entity != null && entity.IsValid)
+                {
+                    // Vérifier si c'est un kit de désamorçage basé sur la position près du joueur
+                    var playerPos = player.PlayerPawn?.Value?.AbsOrigin;
+                    var entityPos = entity.AbsOrigin;
+                    
+                    if (playerPos != null && entityPos != null)
+                    {
+                        float distance = (float)Math.Sqrt(
+                            Math.Pow(playerPos.X - entityPos.X, 2) +
+                            Math.Pow(playerPos.Y - entityPos.Y, 2) +
+                            Math.Pow(playerPos.Z - entityPos.Z, 2)
+                        );
+                        
+                        // Si l'entité est proche du joueur (dans un rayon de 100 unités)
+                        if (distance < 100f)
+                        {
+                            DefuseKitsInUse[player.Slot] = entity;
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+
+        return HookResult.Continue;
+    }
+
+    private HookResult OnBombAbortDefuse(EventBombAbortdefuse @event, GameEventInfo info)
+    {
+        var player = @event.Userid;
+        if (player == null || !player.IsValid) return HookResult.Continue;
+
+        // Retirer le kit de désamorçage de la liste
+        if (DefuseKitsInUse.ContainsKey(player.Slot))
+        {
+            DefuseKitsInUse.Remove(player.Slot);
+        }
+
+        return HookResult.Continue;
+    }
+
+    private void OnClientDisconnect(int slot)
+    {
+        if (InvisiblePlayerSlots.Contains(slot))
+        {
+            InvisiblePlayerSlots.Remove(slot);
+        }
+        if (InvisiblePlayerSlotsPersistent.Contains(slot))
+        {
+            InvisiblePlayerSlotsPersistent.Remove(slot);
+        }
+        if (PlayerMakingSound.ContainsKey(slot))
+        {
+            PlayerMakingSound.Remove(slot);
+        }
+        if (PlayerThirdPerson.ContainsKey(slot))
+        {
+            PlayerThirdPerson.Remove(slot);
+        }
+        if (DefuseKitsInUse.ContainsKey(slot))
+        {
+            DefuseKitsInUse.Remove(slot);
+        }
+        if (PlayerWasInAir.ContainsKey(slot))
+        {
+            PlayerWasInAir.Remove(slot);
+        }
+        if (PlayerFallStartHeight.ContainsKey(slot))
+        {
+            PlayerFallStartHeight.Remove(slot);
+        }
+        if (PlayerCenterTextLocked.ContainsKey(slot))
+        {
+            PlayerCenterTextLocked.Remove(slot);
+        }
+    }
+
+    private void UnhidePlayer(CCSPlayerController player)
+    {
+        if (InvisiblePlayerSlots.Contains(player.Slot))
+        {
+            InvisiblePlayerSlots.Remove(player.Slot);
+        }
+        if (PlayerMakingSound.ContainsKey(player.Slot))
+        {
+            PlayerMakingSound.Remove(player.Slot);
+        }
+    }
+
     private void OnTick()
     {
-        foreach (var player in InvisiblePlayers.ToList())
+        foreach (var player in Utilities.GetPlayers())
         {
             if (player == null || !player.IsValid || !player.PawnIsAlive) continue;
+            if (!InvisiblePlayerSlots.Contains(player.Slot)) continue;
 
             var pawn = player.PlayerPawn.Value;
             if (pawn == null) continue;
@@ -58,13 +253,71 @@ public class PluginInvisible : BasePlugin
             {
                 HandlePlayerSound(player, "course");
             }
+
+            // Vérifier les atterrissages de saut
+            CheckFallLanding(player, pawn);
+        }
+    }
+
+    private void CheckFallLanding(CCSPlayerController player, CCSPlayerPawn pawn)
+    {
+        bool isOnGround = (pawn.Flags & (uint)PlayerFlags.FL_ONGROUND) != 0;
+        float currentHeight = pawn.AbsOrigin?.Z ?? 0f;
+        bool wasInAir = PlayerWasInAir.ContainsKey(player.Slot) && PlayerWasInAir[player.Slot];
+        float verticalVelocity = Math.Abs(pawn.AbsVelocity?.Z ?? 0f);
+
+        if (!isOnGround && !wasInAir)
+        {
+            // Le joueur vient de quitter le sol (début de saut/chute)
+            PlayerWasInAir[player.Slot] = true;
+            PlayerFallStartHeight[player.Slot] = currentHeight;
+            Server.PrintToConsole($"Joueur {player.PlayerName} a quitté le sol à la hauteur {currentHeight:F1}");
+        }
+        else if (isOnGround && wasInAir)
+        {
+            // Le joueur vient d'atterrir
+            PlayerWasInAir[player.Slot] = false;
+            
+            // Détection basée sur la vélocité verticale lors de l'atterrissage
+            if (verticalVelocity > 200f) // Vélocité d'impact significative
+            {
+                Server.PrintToConsole($"Atterrissage avec impact détecté pour {player.PlayerName} (vélocité: {verticalVelocity:F1})");
+                HandlePlayerSound(player, "atterrissage");
+            }
+            else if (PlayerFallStartHeight.ContainsKey(player.Slot))
+            {
+                float fallDistance = PlayerFallStartHeight[player.Slot] - currentHeight;
+                
+                // Debug: Afficher la distance de chute
+                Server.PrintToConsole($"Joueur {player.PlayerName} - Distance de chute: {fallDistance:F1} unités, vélocité: {verticalVelocity:F1}");
+                
+                // Si la chute est assez haute pour faire du bruit
+                if (fallDistance > FALL_DAMAGE_THRESHOLD)
+                {
+                    Server.PrintToConsole($"Atterrissage bruyant détecté pour {player.PlayerName} ({fallDistance:F1} unités)");
+                    HandlePlayerSound(player, "atterrissage");
+                }
+            }
+            
+            if (PlayerFallStartHeight.ContainsKey(player.Slot))
+            {
+                PlayerFallStartHeight.Remove(player.Slot);
+            }
+        }
+        else if (!isOnGround && wasInAir)
+        {
+            // Le joueur est toujours en l'air, mettre à jour la hauteur max si nécessaire
+            if (PlayerFallStartHeight.ContainsKey(player.Slot) && currentHeight > PlayerFallStartHeight[player.Slot])
+            {
+                PlayerFallStartHeight[player.Slot] = currentHeight;
+            }
         }
     }
 
     private HookResult OnPlayerFootstep(EventPlayerFootstep @event, GameEventInfo info)
     {
         var player = @event.Userid;
-        if (player != null && InvisiblePlayers.Contains(player))
+        if (player != null && InvisiblePlayerSlots.Contains(player.Slot))
         {
             HandlePlayerSound(player, "pas");
         }
@@ -74,19 +327,9 @@ public class PluginInvisible : BasePlugin
     private HookResult OnWeaponFire(EventWeaponFire @event, GameEventInfo info)
     {
         var player = @event.Userid;
-        if (player != null && InvisiblePlayers.Contains(player))
+        if (player != null && InvisiblePlayerSlots.Contains(player.Slot))
         {
             HandlePlayerSound(player, "tir");
-        }
-        return HookResult.Continue;
-    }
-
-    private HookResult OnPlayerJump(EventPlayerJump @event, GameEventInfo info)
-    {
-        var player = @event.Userid;
-        if (player != null && InvisiblePlayers.Contains(player))
-        {
-            HandlePlayerSound(player, "saut");
         }
         return HookResult.Continue;
     }
@@ -94,7 +337,7 @@ public class PluginInvisible : BasePlugin
     private HookResult OnWeaponReload(EventWeaponReload @event, GameEventInfo info)
     {
         var player = @event.Userid;
-        if (player != null && InvisiblePlayers.Contains(player))
+        if (player != null && InvisiblePlayerSlots.Contains(player.Slot))
         {
             // Durée réduite à 0.2 secondes pour le rechargement
             HandlePlayerSoundWithDuration(player, "rechargement", 0.2f);
@@ -113,7 +356,7 @@ public class PluginInvisible : BasePlugin
     private HookResult OnWeaponZoom(EventWeaponZoom @event, GameEventInfo info)
     {
         var player = @event.Userid;
-        if (player != null && InvisiblePlayers.Contains(player))
+        if (player != null && InvisiblePlayerSlots.Contains(player.Slot))
         {
             // Durée réduite à 0.2 secondes pour le zoom
             HandlePlayerSoundWithDuration(player, "zoom", 0.2f);
@@ -169,60 +412,141 @@ public class PluginInvisible : BasePlugin
             return;
         }
 
-        if (InvisiblePlayers.Contains(targetPlayer))
+        if (InvisiblePlayerSlots.Contains(targetPlayer.Slot))
         {
-            SetPlayerVisible(targetPlayer);
-            InvisiblePlayers.Remove(targetPlayer);
+            InvisiblePlayerSlots.Remove(targetPlayer.Slot);
+            InvisiblePlayerSlotsPersistent.Remove(targetPlayer.Slot);
             Server.PrintToChatAll($" {ChatColors.Red}[Invisible]{ChatColors.Default} {targetPlayer.PlayerName} est maintenant visible.");
         }
         else
         {
-            SetPlayerInvisible(targetPlayer);
-            InvisiblePlayers.Add(targetPlayer);
+            InvisiblePlayerSlots.Add(targetPlayer.Slot);
+            InvisiblePlayerSlotsPersistent.Add(targetPlayer.Slot);
             Server.PrintToChatAll($" {ChatColors.Red}[Invisible]{ChatColors.Default} {targetPlayer.PlayerName} est maintenant invisible.");
         }
     }
 
-    private void HandlePlayerSoundWithDuration(CCSPlayerController player, string soundType, float duration)
+    private string CreateProgressBar(float timeRemaining, float totalDuration, int barLength = 10)
     {
-        if (!PlayerMakingSound.ContainsKey(player) || !PlayerMakingSound[player])
+        float progress = Math.Clamp(timeRemaining / totalDuration, 0f, 1f);
+        int filled = (int)(progress * barLength);
+        int empty = barLength - filled;
+
+        string filledBar = new string('■', filled);   // ou '█'
+        string emptyBar = new string('·', empty);     // ou '░'
+        
+        return $"[{filledBar}{emptyBar}]";
+    }
+
+        private void HandlePlayerSoundWithDuration(CCSPlayerController player, string soundType, float duration)
+    {
+        if (!PlayerMakingSound.ContainsKey(player.Slot) || !PlayerMakingSound[player.Slot])
         {
-            PlayerMakingSound[player] = true;
+            PlayerMakingSound[player.Slot] = true;
+            PlayerCenterTextLocked[player.Slot] = true; // Verrouiller la zone de texte
 
             // Debug: Afficher le type de son (uniquement visible dans la console serveur)
             Server.PrintToConsole($"Son détecté pour {player.PlayerName}: {soundType}");
 
-            // Rendre le joueur visible temporairement
-            SetPlayerVisible(player);
+            // Variables pour le timer
+            float startTime = Server.CurrentTime;
+            float updateInterval = 0.1f;
 
-            // Afficher le timer initial
-            player.PrintToCenter($"{duration:0.00}");
-
-            // Mettre à jour le timer toutes les 0.25 secondes
-            float remainingTime = duration;
-            while (remainingTime > 0)
+            void UpdateProgressBar()
             {
-                float currentTime = remainingTime;
-                AddTimer(duration - remainingTime, () =>
+                if (player != null && player.IsValid && player.PawnIsAlive && 
+                    PlayerMakingSound.ContainsKey(player.Slot) && PlayerMakingSound[player.Slot])
                 {
-                    if (player != null && player.IsValid && player.PawnIsAlive)
+                    float elapsed = Server.CurrentTime - startTime;
+                    float timeRemaining = duration - elapsed;
+                    
+                    if (timeRemaining > 0)
                     {
-                        player.PrintToCenter($"{currentTime:0.00}");
+                        string progressBar = CreateProgressBar(timeRemaining, duration);
+                        
+                        // S'assurer qu'on affiche seulement si le joueur est encore dans le processus
+                        if (PlayerMakingSound.ContainsKey(player.Slot) && PlayerMakingSound[player.Slot])
+                        {
+                            SafePrintToCenter(player, progressBar);
+                            // Programmer la prochaine mise à jour
+                            AddTimer(updateInterval, UpdateProgressBar);
+                        }
                     }
-                });
-                remainingTime -= 0.25f;
+                    else
+                    {
+                        // Temps écoulé, nettoyer
+                        if (PlayerMakingSound.ContainsKey(player.Slot))
+                        {
+                            PlayerMakingSound[player.Slot] = false;
+                        }
+                        // Déverrouiller et nettoyer l'affichage
+                        UnlockAndClearCenterText(player);
+                    }
+                }
             }
 
-            // Programmer le retour à l'invisibilité
-            AddTimer(duration, () =>
+            // Démarrer immédiatement avec une barre pleine
+            string initialBar = CreateProgressBar(duration, duration);
+            SafePrintToCenter(player, initialBar);
+            
+            // Démarrer les mises à jour
+            AddTimer(updateInterval, UpdateProgressBar);
+
+            // Timer de sécurité pour s'assurer que le joueur redevient invisible
+            AddTimer(duration + 0.2f, () =>
             {
-                if (InvisiblePlayers.Contains(player))
+                if (PlayerMakingSound.ContainsKey(player.Slot))
                 {
-                    SetPlayerInvisible(player);
-                    PlayerMakingSound[player] = false;
-                    player.PrintToCenter("");
+                    PlayerMakingSound[player.Slot] = false;
+                }
+                UnlockAndClearCenterText(player);
+            });
+        }
+    }
+
+    private void SafePrintToCenter(CCSPlayerController player, string message)
+    {
+        // N'affiche que si la zone de texte est verrouillée pour la barre de progression
+        if (player != null && player.IsValid && player.PawnIsAlive && 
+            PlayerCenterTextLocked.ContainsKey(player.Slot) && PlayerCenterTextLocked[player.Slot])
+        {
+            player.PrintToCenter(message);
+        }
+    }
+
+    private void UnlockAndClearCenterText(CCSPlayerController player)
+    {
+        if (player != null && player.IsValid && player.PawnIsAlive)
+        {
+            PlayerCenterTextLocked[player.Slot] = false; // Déverrouiller
+            AddTimer(0.1f, () => {
+                if (player != null && player.IsValid && player.PawnIsAlive)
+                {
+                    player.PrintToCenter(" ");
+                    AddTimer(0.1f, () => {
+                        if (player != null && player.IsValid && player.PawnIsAlive)
+                        {
+                            player.PrintToCenter("");
+                        }
+                    });
                 }
             });
+        }
+    }
+
+    // Méthode publique pour vérifier si on peut afficher dans la zone centrale
+    public bool CanPrintToCenter(CCSPlayerController player)
+    {
+        return player != null && player.IsValid && 
+               (!PlayerCenterTextLocked.ContainsKey(player.Slot) || !PlayerCenterTextLocked[player.Slot]);
+    }
+
+    // Méthode publique pour afficher en respectant le verrouillage
+    public void TryPrintToCenter(CCSPlayerController player, string message)
+    {
+        if (CanPrintToCenter(player))
+        {
+            player.PrintToCenter(message);
         }
     }
 
@@ -232,95 +556,11 @@ public class PluginInvisible : BasePlugin
         HandlePlayerSoundWithDuration(player, soundType, 0.5f);
     }
 
-    private void SetPlayerVisible(CCSPlayerController player)
-    {
-        if (player == null || !player.IsValid || !player.PlayerPawn.IsValid) return;
 
-        var pawn = player.PlayerPawn.Value;
-        if (pawn == null) return;
-
-        // Rendre le joueur visible
-        pawn.Render = Color.FromArgb(255, 255, 255, 255);
-        Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_clrRender");
-
-        // Réactiver la visibilité du modèle
-        pawn.RenderMode = RenderMode_t.kRenderNormal;
-        Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_nRenderMode");
-
-        // Rendre les armes visibles
-        var activeWeapon = pawn.WeaponServices?.ActiveWeapon.Value;
-        if (activeWeapon != null && activeWeapon.IsValid)
-        {
-            activeWeapon.Render = Color.FromArgb(255, 255, 255, 255);
-            activeWeapon.ShadowStrength = 1.0f;
-            Utilities.SetStateChanged(activeWeapon, "CBaseModelEntity", "m_clrRender");
-        }
-
-        // Rendre toutes les armes visibles
-        var myWeapons = pawn.WeaponServices?.MyWeapons;
-        if (myWeapons != null)
-        {
-            foreach (var gun in myWeapons)
-            {
-                var weapon = gun.Value;
-                if (weapon != null)
-                {
-                    weapon.Render = Color.FromArgb(255, 255, 255, 255);
-                    weapon.ShadowStrength = 1.0f;
-                    Utilities.SetStateChanged(weapon, "CBaseModelEntity", "m_clrRender");
-                }
-            }
-        }
-    }
-
-    private void SetPlayerInvisible(CCSPlayerController player)
-    {
-        if (player == null || !player.IsValid || !player.PlayerPawn.IsValid) return;
-
-        var pawn = player.PlayerPawn.Value;
-        if (pawn == null) return;
-
-        // Rendre le joueur invisible
-        pawn.Render = Color.FromArgb(0, 255, 255, 255);
-        Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_clrRender");
-
-        // Désactiver la visibilité du modèle
-        pawn.RenderMode = RenderMode_t.kRenderTransColor;
-        Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_nRenderMode");
-
-        // Rendre l'arme active invisible
-        var activeWeapon = pawn.WeaponServices?.ActiveWeapon.Value;
-        if (activeWeapon != null && activeWeapon.IsValid)
-        {
-            activeWeapon.Render = Color.FromArgb(0, 255, 255, 255);
-            activeWeapon.ShadowStrength = 0.0f;
-            Utilities.SetStateChanged(activeWeapon, "CBaseModelEntity", "m_clrRender");
-        }
-
-        // Rendre toutes les armes invisibles
-        var myWeapons = pawn.WeaponServices?.MyWeapons;
-        if (myWeapons != null)
-        {
-            foreach (var gun in myWeapons)
-            {
-                var weapon = gun.Value;
-                if (weapon != null)
-                {
-                    weapon.Render = Color.FromArgb(0, 255, 255, 255);
-                    weapon.ShadowStrength = 0.0f;
-                    Utilities.SetStateChanged(weapon, "CBaseModelEntity", "m_clrRender");
-                }
-            }
-        }
-    }
 
     private HookResult OnItemPickup(EventItemPickup @event, GameEventInfo info)
     {
-        var player = @event.Userid;
-        if (player != null && InvisiblePlayers.Contains(player))
-        {
-            SetPlayerInvisible(player);
-        }
+        // Plus besoin de faire quoi que ce soit ici avec la nouvelle approche CheckTransmit
         return HookResult.Continue;
     }
 
@@ -356,7 +596,10 @@ public class PluginInvisible : BasePlugin
             return;
         }
 
-        var invisibleList = InvisiblePlayers.Select(p => p.PlayerName).ToList();
+        var invisibleList = Utilities.GetPlayers()
+            .Where(p => p != null && p.IsValid && InvisiblePlayerSlots.Contains(p.Slot))
+            .Select(p => p.PlayerName)
+            .ToList();
 
         if (invisibleList.Count == 0)
         {
@@ -388,16 +631,16 @@ public class PluginInvisible : BasePlugin
             return;
         }
 
-        if (InvisiblePlayers.Contains(target))
+        if (InvisiblePlayerSlots.Contains(target.Slot))
         {
-            SetPlayerVisible(target);
-            InvisiblePlayers.Remove(target);
+            InvisiblePlayerSlots.Remove(target.Slot);
+            InvisiblePlayerSlotsPersistent.Remove(target.Slot);
             Server.PrintToChatAll($"[PluginInvisible] {target.PlayerName} est maintenant visible.");
         }
         else
         {
-            SetPlayerInvisible(target);
-            InvisiblePlayers.Add(target);
+            InvisiblePlayerSlots.Add(target.Slot);
+            InvisiblePlayerSlotsPersistent.Add(target.Slot);
             Server.PrintToChatAll($"[PluginInvisible] {target.PlayerName} est maintenant invisible.");
         }
     }
